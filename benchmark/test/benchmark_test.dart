@@ -180,6 +180,30 @@ void main() {
       );
     });
 
+    test('listener removing itself while notified', () {
+      final errors = <String>[];
+      final onError = FlutterError.onError;
+      FlutterError.onError = (details) =>
+          errors.add(details.exceptionAsString().split('\n').first);
+      final manager = MMManager(BNotifier.new, autodispose: true);
+      final notifier = manager.notifier;
+      late VoidCallback once;
+      once = () => notifier.removeListener(once);
+      notifier.addListener(once);
+      notifier.increment();
+      FlutterError.onError = onError;
+      _check(
+        'self_removal',
+        'A one-shot listener (removing itself when notified) autodisposes cleanly',
+        (
+          ok: errors.isEmpty && notifier.isDisposed,
+          detail: errors.isEmpty
+              ? (notifier.isDisposed ? 'disposed after notifying' : 'not disposed')
+              : '${errors.length} error ("${errors.first}")',
+        ),
+      );
+    });
+
     test('stale selection value', () async {
       final notifier = BNotifier();
       final selected = notifier.select((state) => state.text);
@@ -287,6 +311,42 @@ void main() {
   });
 
   group('performance', () {
+    for (final listeners in [1, 10]) {
+      test('direct listeners x$listeners', () {
+        final notifier = BNotifier();
+        for (var i = 0; i < listeners; i++) {
+          notifier.addListener(() {});
+        }
+        const updates = 20000;
+        final micros = _median(_runs, () {
+          for (var i = 0; i < updates; i++) {
+            notifier.increment();
+          }
+        });
+        _performance['direct_listeners_$listeners'] = {
+          'title': 'Notifier with $listeners listener(s), per state change',
+          'ns': micros * 1000 / updates,
+        };
+      });
+    }
+
+    test('manager access', () {
+      final manager = MMManager(BNotifier.new);
+      const reads = 100000;
+      var sink = 0;
+      final micros = _median(_runs, () {
+        for (var i = 0; i < reads; i++) {
+          sink += manager.notifier.state.value;
+        }
+      });
+      _performance['manager_access'] = {
+        'title': 'manager.notifier, per access',
+        'ns': micros * 1000 / reads,
+        // keeps the reads from being optimized away
+        'checksum': sink,
+      };
+    });
+
     for (final listeners in [1, 10, 100]) {
       test('selection fan-out x$listeners', () {
         var selections = 0;
@@ -309,6 +369,50 @@ void main() {
           'title': '1 selection with $listeners listener(s), per state change',
           'ns': micros * 1000 / updates,
           'selector_runs': selections / ((_runs + 3) * updates),
+        };
+      });
+    }
+
+    test('selection read by its listener', () {
+      final notifier = BNotifier();
+      final selected = notifier.select((state) => state.value);
+      var sink = 0;
+      // as ValueListenableBuilder does on every change
+      selected.addListener(() => sink += selected.value);
+      const updates = 20000;
+      final micros = _median(_runs, () {
+        for (var i = 0; i < updates; i++) {
+          notifier.increment();
+        }
+      });
+      _performance['selection_read'] = {
+        'title': '1 selection read by its listener (ValueListenableBuilder), per state change',
+        'ns': micros * 1000 / updates,
+        'checksum': sink,
+      };
+    });
+
+    for (final selection in [false, true]) {
+      test('screen enter and leave, selection: $selection', () {
+        final manager = MMManager(BNotifier.new, autodispose: true);
+        void l() {}
+        const visits = 20000;
+        final micros = _median(_runs, () {
+          for (var i = 0; i < visits; i++) {
+            final notifier = manager.notifier;
+            final Listenable listenable = selection
+                ? notifier.select((state) => state.value)
+                : notifier;
+            listenable.addListener(l);
+            notifier.increment();
+            // the notifier is autodisposed here
+            listenable.removeListener(l);
+          }
+        });
+        _performance['screen_${selection ? 'selection' : 'direct'}'] = {
+          'title': 'Autodispose notifier created, listened${selection ? ' via select()' : ''}, '
+              'updated and disposed',
+          'ns': micros * 1000 / visits,
         };
       });
     }
