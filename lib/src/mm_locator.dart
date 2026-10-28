@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 /// Minimal locator
 ///
 /// A minimal locator is responsible for holding a singleton instance of any
@@ -16,6 +18,7 @@ class MMLocator<T> {
 
   T? _instance;
   final T Function() _create;
+  T Function()? _override;
 
   /// Returns the instance managed by this locator
   ///
@@ -28,7 +31,37 @@ class MMLocator<T> {
   /// await settings.load();
   /// ```
   T get instance {
-    _instance ??= _create();
+    final creator = _override ?? _create;
+    _instance ??= creator();
     return _instance!;
+  }
+
+  /// Overrides the instance factory for testing purposes
+  ///
+  /// The current instance is dropped, and the next access to [instance]
+  /// lazily creates one through [override]. This method is only available in
+  /// tests and should not be used in production
+  ///
+  /// Example:
+  /// ```dart
+  /// tasksRepositoryLocator.override(FakeTasksRepository.new);
+  /// ```
+  @visibleForTesting
+  void override(final T Function() override) {
+    _override = override;
+    _instance = null;
+  }
+
+  /// Removes any override, dropping the current instance, so that the next
+  /// access to [instance] lazily creates one through the original factory
+  ///
+  /// Example:
+  /// ```dart
+  /// tearDown(tasksRepositoryLocator.reset);
+  /// ```
+  @visibleForTesting
+  void reset() {
+    _override = null;
+    _instance = null;
   }
 }

@@ -144,4 +144,13 @@ testWidgets('should update UI when state changes', (tester) async {
 });
 ```
 
+### Overriding repositories and services
+
+Likewise, you can override the instance held by a minimal locator, e.g. with a fake repository. Notifiers created afterwards get the fake one injected:
+
+```dart
+setUp(() => tasksRepositoryLocator.override(FakeTasksRepository.new));
+tearDown(tasksRepositoryLocator.reset);
+```
+
 See the [example app tests](/example/test) for more testing examples.
