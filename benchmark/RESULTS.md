@@ -1,10 +1,12 @@
 # minimal_mvn: before vs after
 
 * **Before**: `upstream/main@599b2ae`
-* **After**: `benchmark/before-after@75a86a3`
-* Dart 3.12.2, macOS Version 27.0.1 (Build 26A434), `flutter test` (JIT, asserts on), 5 alternating rounds
+* **After**: `benchmark/before-after@b40ba84`
+* macOS Version 27.0.1 (Build 26A434), Dart 3.12.2
 
 ## Correctness
+
+Bug scenarios replayed with `flutter test` on both versions.
 
 | Scenario | Before | After |
 | --- | --- | --- |
@@ -22,21 +24,23 @@
 
 ## Performance
 
-Each cell is the median across rounds of each round's median (11 runs after 3 warm-ups), with the range across rounds. Lower is better.
+Release build (AOT), each benchmark in its own process, before and after alternating, 8 rounds. Each cell is the median across rounds, with the range; each round is itself the median of 15 runs after 5 warm-ups. Lower is better; changes within ±3% are reported as equal.
 
-| Benchmark | Selector runs before → after | Before | After | Change |
+| Benchmark | Selector runs | Before | After | Change |
 | --- | --- | --- | --- | --- |
-| Notifier with 1 listener(s), per state change |  | 24 ns <sub>(20 ns–51 ns)</sub> | 31 ns <sub>(21 ns–44 ns)</sub> | +29% |
-| Notifier with 10 listener(s), per state change |  | 50 ns <sub>(48 ns–60 ns)</sub> | 52 ns <sub>(50 ns–63 ns)</sub> | +4% |
-| manager.notifier, per access |  | 2 ns <sub>(2 ns–2 ns)</sub> | 1 ns <sub>(1 ns–1 ns)</sub> | -50% |
-| 1 selection with 1 listener(s), per state change | 1 → 1 | 43 ns <sub>(41 ns–45 ns)</sub> | 53 ns <sub>(48 ns–83 ns)</sub> | +24% |
-| 1 selection with 10 listener(s), per state change | 10 → 1 | 229 ns <sub>(224 ns–276 ns)</sub> | 132 ns <sub>(127 ns–142 ns)</sub> | -42% |
-| 1 selection with 100 listener(s), per state change | 100 → 1 | 2.08 µs <sub>(1.97 µs–2.75 µs)</sub> | 756 ns <sub>(718 ns–852 ns)</sub> | -64% |
-| 1 selection read by its listener (ValueListenableBuilder), per state change |  | 43 ns <sub>(42 ns–56 ns)</sub> | 51 ns <sub>(50 ns–53 ns)</sub> | +20% |
-| Autodispose notifier created, listened, updated and disposed |  | 110 ns <sub>(105 ns–118 ns)</sub> | 140 ns <sub>(137 ns–142 ns)</sub> | +28% |
-| Autodispose notifier created, listened via select(), updated and disposed |  | 289 ns <sub>(288 ns–480 ns)</sub> | 306 ns <sub>(304 ns–332 ns)</sub> | +6% |
-| 100 selections with 1 listener each, per state change |  | 3.14 µs <sub>(2.99 µs–3.55 µs)</sub> | 3.18 µs <sub>(2.93 µs–3.49 µs)</sub> | +1% |
-| addListener + removeListener, with 0 other listeners |  | 51 ns <sub>(50 ns–56 ns)</sub> | 59 ns <sub>(58 ns–59 ns)</sub> | +16% |
-| addListener + removeListener, with 10 other listeners |  | 536 ns <sub>(502 ns–786 ns)</sub> | 517 ns <sub>(513 ns–659 ns)</sub> | -3% |
-| addListener + removeListener, with 100 other listeners |  | 4.85 µs <sub>(4.65 µs–4.96 µs)</sub> | 4.64 µs <sub>(4.53 µs–5.26 µs)</sub> | -4% |
-| select() + addListener + removeListener, 10 per event loop turn |  | 754 ns <sub>(734 ns–1.34 µs)</sub> | 769 ns <sub>(725 ns–821 ns)</sub> | +2% |
+| Notifier with 1 listener(s), per state change |  | 8.07 ns <sub>7.92 ns–8.27 ns</sub> | 8.63 ns <sub>8.49 ns–8.71 ns</sub> | ⚠️ +7% |
+| Notifier with 10 listener(s), per state change |  | 24.2 ns <sub>24.0 ns–32.2 ns</sub> | 24.7 ns <sub>24.6 ns–24.9 ns</sub> | = +2% |
+| manager.notifier, per access |  | 2.66 ns <sub>2.65 ns–2.69 ns</sub> | 2.66 ns <sub>2.65 ns–2.69 ns</sub> | = -0% |
+| 1 selection with 1 listener(s), per state change | 1 → 1 | 21.1 ns <sub>20.8 ns–21.1 ns</sub> | 19.9 ns <sub>19.7 ns–20.9 ns</sub> | ✅ -5% |
+| 1 selection with 10 listener(s), per state change | 10 → 1 | 158.9 ns <sub>150.3 ns–181.5 ns</sub> | 36.9 ns <sub>36.7 ns–39.6 ns</sub> | ✅ -77% |
+| 1 selection with 100 listener(s), per state change | 100 → 1 | 1.17 µs <sub>1.15 µs–1.25 µs</sub> | 190.2 ns <sub>187.6 ns–193.2 ns</sub> | ✅ -84% |
+| 1 selection read by its listener (ValueListenableBuilder), per state change |  | 22.0 ns <sub>21.5 ns–25.4 ns</sub> | 20.7 ns <sub>20.6 ns–21.9 ns</sub> | ✅ -6% |
+| Autodispose notifier created, listened, updated and disposed |  | 62.6 ns <sub>61.6 ns–63.3 ns</sub> | 72.2 ns <sub>70.5 ns–72.9 ns</sub> | ⚠️ +15% |
+| Autodispose notifier created, listened via select(), updated and disposed |  | 182.5 ns <sub>178.4 ns–185.1 ns</sub> | 157.9 ns <sub>153.9 ns–160.4 ns</sub> | ✅ -13% |
+| 100 selections with 1 listener each, per state change |  | 1.65 µs <sub>1.55 µs–1.67 µs</sub> | 1.28 µs <sub>1.27 µs–1.29 µs</sub> | ✅ -22% |
+| addListener + removeListener, with 0 other listeners |  | 43.9 ns <sub>43.2 ns–45.6 ns</sub> | 45.0 ns <sub>44.4 ns–45.5 ns</sub> | = +2% |
+| addListener + removeListener, with 10 other listeners |  | 431.6 ns <sub>429.1 ns–437.8 ns</sub> | 432.7 ns <sub>431.9 ns–434.2 ns</sub> | = +0% |
+| addListener + removeListener, with 100 other listeners |  | 3.87 µs <sub>3.85 µs–3.95 µs</sub> | 3.87 µs <sub>3.85 µs–3.92 µs</sub> | = -0% |
+| select() + addListener + removeListener, 10 per event loop turn |  | 213.6 ns <sub>211.6 ns–217.5 ns</sub> | 183.8 ns <sub>181.2 ns–199.4 ns</sub> | ✅ -14% |
+
+**2 of 14 benchmarks slower.**

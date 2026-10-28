@@ -1,4 +1,4 @@
-// Benchmarks minimal_mvn. Run it through tool/run.sh, which runs it once
+// Replays the bug scenarios. Run it through tool/run.sh, which runs it once
 // against the version before the fixes and once against the version after,
 // then compares the two.
 //
@@ -9,41 +9,12 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:minimal_benchmark/model.dart';
 import 'package:minimal_mvn/minimal_mvn.dart';
-
-@immutable
-class BState {
-  const BState(this.value, this.text);
-
-  final int value;
-  final String text;
-
-  @override
-  bool operator ==(Object other) =>
-      other is BState && value == other.value && text == other.text;
-
-  @override
-  int get hashCode => Object.hash(value, text);
-}
-
-class BNotifier extends MMNotifier<BState> {
-  BNotifier() : super(const BState(0, '')) {
-    created++;
-  }
-
-  static var created = 0;
-
-  void increment() => notify(BState(state.value + 1, state.text));
-
-  void append(String suffix) => notify(BState(state.value, '${state.text}$suffix'));
-
-  bool get isDisposed => disposed;
-}
 
 typedef Outcome = ({bool ok, String detail});
 
 final _correctness = <String, Map<String, Object>>{};
-final _performance = <String, Map<String, Object>>{};
 
 void _check(String id, String title, Outcome outcome) =>
     _correctness[id] = {'title': title, 'ok': outcome.ok, 'detail': outcome.detail};
@@ -51,22 +22,6 @@ void _check(String id, String title, Outcome outcome) =>
 /// Lets a deferred unsubscription (if any) happen
 Future<void> _flush() => Future<void>.delayed(Duration.zero);
 
-/// Median duration of [body] in microseconds, after warming up
-double _median(int runs, void Function() body) {
-  for (var i = 0; i < 3; i++) {
-    body();
-  }
-  final samples = <int>[];
-  for (var i = 0; i < runs; i++) {
-    final stopwatch = Stopwatch()..start();
-    body();
-    samples.add(stopwatch.elapsedMicroseconds);
-  }
-  samples.sort();
-  return samples[runs ~/ 2].toDouble();
-}
-
-const _runs = 11;
 
 void main() {
   tearDownAll(() {
@@ -80,7 +35,6 @@ void main() {
           'dart': Platform.version,
           'os': Platform.operatingSystemVersion,
           'correctness': _correctness,
-          'performance': _performance,
         }),
       );
   });
@@ -307,185 +261,6 @@ void main() {
         'A selection in a hidden tab shows the current state (#10)',
         (ok: shown == 'b:moved', detail: 'shows "$shown" (expected "b:moved")'),
       );
-    });
-  });
-
-  group('performance', () {
-    for (final listeners in [1, 10]) {
-      test('direct listeners x$listeners', () {
-        final notifier = BNotifier();
-        for (var i = 0; i < listeners; i++) {
-          notifier.addListener(() {});
-        }
-        const updates = 20000;
-        final micros = _median(_runs, () {
-          for (var i = 0; i < updates; i++) {
-            notifier.increment();
-          }
-        });
-        _performance['direct_listeners_$listeners'] = {
-          'title': 'Notifier with $listeners listener(s), per state change',
-          'ns': micros * 1000 / updates,
-        };
-      });
-    }
-
-    test('manager access', () {
-      final manager = MMManager(BNotifier.new);
-      const reads = 100000;
-      var sink = 0;
-      final micros = _median(_runs, () {
-        for (var i = 0; i < reads; i++) {
-          sink += manager.notifier.state.value;
-        }
-      });
-      _performance['manager_access'] = {
-        'title': 'manager.notifier, per access',
-        'ns': micros * 1000 / reads,
-        // keeps the reads from being optimized away
-        'checksum': sink,
-      };
-    });
-
-    for (final listeners in [1, 10, 100]) {
-      test('selection fan-out x$listeners', () {
-        var selections = 0;
-        final notifier = BNotifier();
-        final selected = notifier.select((state) {
-          selections++;
-          return state.value;
-        });
-        for (var i = 0; i < listeners; i++) {
-          selected.addListener(() {});
-        }
-        const updates = 20000;
-        selections = 0;
-        final micros = _median(_runs, () {
-          for (var i = 0; i < updates; i++) {
-            notifier.increment();
-          }
-        });
-        _performance['selection_fanout_$listeners'] = {
-          'title': '1 selection with $listeners listener(s), per state change',
-          'ns': micros * 1000 / updates,
-          'selector_runs': selections / ((_runs + 3) * updates),
-        };
-      });
-    }
-
-    test('selection read by its listener', () {
-      final notifier = BNotifier();
-      final selected = notifier.select((state) => state.value);
-      var sink = 0;
-      // as ValueListenableBuilder does on every change
-      selected.addListener(() => sink += selected.value);
-      const updates = 20000;
-      final micros = _median(_runs, () {
-        for (var i = 0; i < updates; i++) {
-          notifier.increment();
-        }
-      });
-      _performance['selection_read'] = {
-        'title': '1 selection read by its listener (ValueListenableBuilder), per state change',
-        'ns': micros * 1000 / updates,
-        'checksum': sink,
-      };
-    });
-
-    for (final selection in [false, true]) {
-      test('screen enter and leave, selection: $selection', () {
-        final manager = MMManager(BNotifier.new, autodispose: true);
-        void l() {}
-        const visits = 20000;
-        final micros = _median(_runs, () {
-          for (var i = 0; i < visits; i++) {
-            final notifier = manager.notifier;
-            final Listenable listenable = selection
-                ? notifier.select((state) => state.value)
-                : notifier;
-            listenable.addListener(l);
-            notifier.increment();
-            // the notifier is autodisposed here
-            listenable.removeListener(l);
-          }
-        });
-        _performance['screen_${selection ? 'selection' : 'direct'}'] = {
-          'title': 'Autodispose notifier created, listened${selection ? ' via select()' : ''}, '
-              'updated and disposed',
-          'ns': micros * 1000 / visits,
-        };
-      });
-    }
-
-    test('many selections', () {
-      final notifier = BNotifier();
-      for (var i = 0; i < 100; i++) {
-        notifier.select((state) => state.value).addListener(() {});
-      }
-      const updates = 5000;
-      final micros = _median(_runs, () {
-        for (var i = 0; i < updates; i++) {
-          notifier.increment();
-        }
-      });
-      _performance['many_selections'] = {
-        'title': '100 selections with 1 listener each, per state change',
-        'ns': micros * 1000 / updates,
-      };
-    });
-
-    for (final background in [0, 10, 100]) {
-      test('listener churn with $background listeners', () {
-        final notifier = BNotifier();
-        for (var i = 0; i < background; i++) {
-          notifier.addListener(() {});
-        }
-        void l() {}
-        const ops = 50000;
-        final micros = _median(_runs, () {
-          for (var i = 0; i < ops; i++) {
-            notifier
-              ..addListener(l)
-              ..removeListener(l);
-          }
-        });
-        _performance['listener_churn_$background'] = {
-          'title': 'addListener + removeListener, with $background other listeners',
-          'ns': micros * 1000 / ops,
-        };
-      });
-    }
-
-    test('selection churn', () async {
-      final notifier = BNotifier();
-      notifier.addListener(() {});
-      // 10 widgets swapping their selection per "frame", e.g. select() in
-      // build(), then the event loop turns, as it does between frames
-      const frames = 1000;
-      const perFrame = 10;
-      Future<int> run() async {
-        final stopwatch = Stopwatch()..start();
-        for (var f = 0; f < frames; f++) {
-          for (var i = 0; i < perFrame; i++) {
-            void l() {}
-            notifier.select((state) => state.value)
-              ..addListener(l)
-              ..removeListener(l);
-          }
-          // pending microtasks, e.g. deferred unsubscriptions, run first
-          await Future<void>.microtask(() {});
-        }
-        return stopwatch.elapsedMicroseconds;
-      }
-
-      for (var i = 0; i < 3; i++) {
-        await run();
-      }
-      final samples = [for (var i = 0; i < _runs; i++) await run()]..sort();
-      _performance['selection_churn'] = {
-        'title': 'select() + addListener + removeListener, $perFrame per event loop turn',
-        'ns': samples[_runs ~/ 2] * 1000 / (frames * perFrame),
-      };
     });
   });
 }
