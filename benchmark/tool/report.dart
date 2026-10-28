@@ -10,7 +10,7 @@ const _equalWithin = 3;
 Map<String, dynamic> _json(String path) =>
     jsonDecode(File(path).readAsStringSync()) as Map<String, dynamic>;
 
-/// Performance results by benchmark id, one per round
+/// Performance results by benchmark id, one per round and layout
 Map<String, List<Map<String, dynamic>>> _rounds(String path) {
   final rounds = <String, List<Map<String, dynamic>>>{};
   for (final line in File(path).readAsLinesSync()) {
@@ -18,6 +18,20 @@ Map<String, List<Map<String, dynamic>>> _rounds(String path) {
     rounds.putIfAbsent(result['id'] as String, () => []).add(result);
   }
   return rounds;
+}
+
+/// Nanoseconds per layout: the fastest round of each layout, as other
+/// processes on the machine can only slow a round down
+List<num> _perLayout(List<Map<String, dynamic>> results) {
+  final fastest = <int, num>{};
+  for (final result in results) {
+    final layout = result['layout'] as int;
+    final ns = result['ns'] as num;
+    if (ns < (fastest[layout] ?? double.infinity)) {
+      fastest[layout] = ns;
+    }
+  }
+  return fastest.values.toList();
 }
 
 num _median(Iterable<num> values) {
@@ -69,7 +83,8 @@ void main(List<String> args) {
 
   final beforePerf = _rounds('$dir/before_performance.jsonl');
   final afterPerf = _rounds('$dir/after_performance.jsonl');
-  final rounds = afterPerf.values.first.length;
+  final layouts = _perLayout(afterPerf.values.first).length;
+  final rounds = afterPerf.values.first.length ~/ layouts;
   out
     ..writeln()
     ..writeln('**$fixed of ${afterChecks.length} scenarios fixed.**')
@@ -77,10 +92,14 @@ void main(List<String> args) {
     ..writeln('## Performance')
     ..writeln()
     ..writeln(
-      'Release build (AOT), each benchmark in its own process, before and after '
-      'alternating, $rounds rounds. Each cell is the median across rounds, with '
-      'the range; each round is itself the median of 15 runs after 5 warm-ups. '
-      'Lower is better; changes within ±$_equalWithin% are reported as equal.',
+      'Release builds (AOT), $layouts per version, each with a different code '
+      'layout, since nanosecond benchmarks depend on code alignment. Each '
+      'benchmark runs in its own process, before and after alternating, '
+      '$rounds rounds per build; a round is the median of 15 runs after 5 '
+      'warm-ups. Each cell is the median across builds of their fastest round '
+      '(other processes can only slow a round down), with the range across '
+      'builds. Lower is better; changes within ±$_equalWithin% are reported '
+      'as equal.',
     )
     ..writeln()
     ..writeln('| Benchmark | Selector runs | Before | After | Change |')
@@ -89,8 +108,8 @@ void main(List<String> args) {
   var slower = 0;
   for (final MapEntry(key: id, value: a) in afterPerf.entries) {
     final b = beforePerf[id]!;
-    final bNs = [for (final r in b) r['ns'] as num];
-    final aNs = [for (final r in a) r['ns'] as num];
+    final bNs = _perLayout(b);
+    final aNs = _perLayout(a);
     final change = (_median(aNs) - _median(bNs)) / _median(bNs) * 100;
     final String verdict;
     if (change <= -_equalWithin) {

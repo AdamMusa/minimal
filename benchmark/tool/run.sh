@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 # Benchmarks minimal_mvn before and after the fixes, and writes RESULTS.md
 #
-#   ROUNDS=8 benchmark/tool/run.sh [before-ref]
+#   LAYOUTS=3 ROUNDS=4 benchmark/tool/run.sh [before-ref]
 #
 # "before" is before-ref (default: upstream/main, or main), checked out in a
 # temporary git worktree; "after" is the current checkout.
 #
 # * Correctness: test/correctness_test.dart replays the bug scenarios
-# * Performance: the app in lib/ is built in release mode (AOT) once per
-#   version; then each benchmark runs in its own process, alternating
-#   versions, ROUNDS times
+# * Performance: the app in lib/ is built in release mode (AOT), LAYOUTS times
+#   per version, each build with a different amount of padding code, since
+#   nanosecond benchmarks depend on code alignment. Each benchmark then runs
+#   in its own process, alternating versions, ROUNDS times per build
 set -euo pipefail
 
 BENCH_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -21,13 +22,17 @@ elif git -C "$ROOT" rev-parse --verify -q upstream/main >/dev/null; then
 else
   BEFORE_REF=main
 fi
-ROUNDS="${ROUNDS:-8}"
+LAYOUTS="${LAYOUTS:-3}"
+ROUNDS="${ROUNDS:-4}"
 
 TMP="$(mktemp -d)"
 BEFORE_DIR="$TMP/before"
 git -C "$ROOT" worktree add --detach -q "$BEFORE_DIR" "$BEFORE_REF"
+PADDING="$BENCH_DIR/lib/padding.dart"
+cp "$PADDING" "$TMP/padding.dart"
 cleanup() {
   git -C "$ROOT" worktree remove --force "$BEFORE_DIR"
+  cp "$TMP/padding.dart" "$PADDING"
   rm -f "$BENCH_DIR/pubspec_overrides.yaml"
   rm -rf "$TMP"
 }
@@ -36,6 +41,18 @@ trap cleanup EXIT
 RESULTS="$BENCH_DIR/results"
 rm -rf "$RESULTS"
 mkdir -p "$RESULTS"
+
+# layout: writes padding.dart with a layout-dependent amount of dead code
+pad() {
+  {
+    sed -n '1,3p' "$TMP/padding.dart"
+    echo 'final padding = <int Function(int)>['
+    for i in $(seq 1 $(($1 * 7))); do
+      echo "  (x) => (x * $((i * 31 + 7)) + $i) ^ (x >> $((i % 5 + 1))),"
+    done
+    echo '];'
+  } >"$PADDING"
+}
 
 # label, package directory, git ref
 prepare() {
@@ -46,9 +63,12 @@ prepare() {
   echo "$1 ($3): correctness"
   BENCH_LABEL="$1" BENCH_REF="$3" BENCH_OUT="$RESULTS/$1_correctness.json" \
     flutter test test/correctness_test.dart >/dev/null
-  echo "$1 ($3): release build"
-  flutter build macos --release >/dev/null
-  cp -R build/macos/Build/Products/Release/minimal_benchmark.app "$TMP/$1.app"
+  for layout in $(seq 1 "$LAYOUTS"); do
+    echo "$1 ($3): release build, layout $layout/$LAYOUTS"
+    pad "$layout"
+    flutter build macos --release >/dev/null
+    cp -R build/macos/Build/Products/Release/minimal_benchmark.app "$TMP/$1_$layout.app"
+  done
 }
 
 prepare before "$BEFORE_DIR" \
@@ -56,24 +76,26 @@ prepare before "$BEFORE_DIR" \
 prepare after "$ROOT" \
   "$(git -C "$ROOT" branch --show-current)@$(git -C "$ROOT" rev-parse --short HEAD)"
 
-# label, benchmark id
+# label, layout, benchmark id
 run() {
-  BENCH_ONLY="$2" "$TMP/$1.app/Contents/MacOS/minimal_benchmark" 2>/dev/null |
-    grep '^{' >>"$RESULTS/$1_performance.jsonl"
+  BENCH_ONLY="$3" "$TMP/$1_$2.app/Contents/MacOS/minimal_benchmark" 2>/dev/null |
+    grep '^{' | sed "s/^{/{\"layout\":$2,/" >>"$RESULTS/$1_performance.jsonl"
 }
 
-IDS="$("$TMP/after.app/Contents/MacOS/minimal_benchmark" 2>/dev/null | grep '^\[' | tr -d '[]"' | tr ',' ' ')"
+IDS="$("$TMP/after_1.app/Contents/MacOS/minimal_benchmark" 2>/dev/null | grep '^\[' | tr -d '[]"' | tr ',' ' ')"
 for round in $(seq 1 "$ROUNDS"); do
   echo "Performance round $round/$ROUNDS"
-  for id in $IDS; do
-    # alternate which version goes first
-    if ((round % 2)); then
-      run before "$id"
-      run after "$id"
-    else
-      run after "$id"
-      run before "$id"
-    fi
+  for layout in $(seq 1 "$LAYOUTS"); do
+    for id in $IDS; do
+      # alternate which version goes first
+      if (((round + layout) % 2)); then
+        run before "$layout" "$id"
+        run after "$layout" "$id"
+      else
+        run after "$layout" "$id"
+        run before "$layout" "$id"
+      fi
+    done
   done
 done
 
