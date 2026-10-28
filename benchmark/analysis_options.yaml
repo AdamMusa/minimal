@@ -1,0 +1,4 @@
+# A standalone tool, not part of the package: keep the analyzer defaults
+analyzer:
+  language:
+    strict-casts: true

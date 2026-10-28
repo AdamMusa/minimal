@@ -1,0 +1,85 @@
+{
+  "label": "after",
+  "ref": "benchmark/before-after@a691422",
+  "dart": "3.12.2 (stable) (Tue Jun 9 01:11:39 2026 -0700) on \"macos_arm64\"",
+  "os": "Version 27.0.1 (Build 26A434)",
+  "correctness": {
+    "unknown_listener": {
+      "title": "Removing a never-added listener keeps an autodispose notifier alive",
+      "ok": true,
+      "detail": "alive"
+    },
+    "double_removal": {
+      "title": "Removing a listener twice keeps an autodispose notifier alive",
+      "ok": true,
+      "detail": "alive"
+    },
+    "unsubscribed_once": {
+      "title": "onUnsubscribed fires once when the last listener leaves",
+      "ok": true,
+      "detail": "fired 1 time(s)"
+    },
+    "selection_unknown_listener": {
+      "title": "A selection ignores removing a listener it does not have",
+      "ok": true,
+      "detail": "alive"
+    },
+    "stale_instance": {
+      "title": "A replaced instance cannot dispose the current one",
+      "ok": true,
+      "detail": "alive"
+    },
+    "stale_selection_value": {
+      "title": "A selection without listeners reports the current value",
+      "ok": true,
+      "detail": "read \"new\", state is \"new\""
+    },
+    "select_in_build": {
+      "title": "select() in build(): state survives 100 rebuilds",
+      "ok": true,
+      "detail": "0 errors, 1 notifier instances, shows \"100\" (expected \"100\")"
+    },
+    "tabbarview_issue10": {
+      "title": "A selection in a hidden tab shows the current state (#10)",
+      "ok": true,
+      "detail": "shows \"b:moved\" (expected \"b:moved\")"
+    }
+  },
+  "performance": {
+    "selection_fanout_1": {
+      "title": "1 selection with 1 listener(s), per state change",
+      "ns": 53.95,
+      "selector_runs": 1.0
+    },
+    "selection_fanout_10": {
+      "title": "1 selection with 10 listener(s), per state change",
+      "ns": 132.2,
+      "selector_runs": 1.0
+    },
+    "selection_fanout_100": {
+      "title": "1 selection with 100 listener(s), per state change",
+      "ns": 1465.15,
+      "selector_runs": 1.0
+    },
+    "many_selections": {
+      "title": "100 selections with 1 listener each, per state change",
+      "ns": 5648.0
+    },
+    "listener_churn_0": {
+      "title": "addListener + removeListener, with 0 other listeners",
+      "ns": 205.54
+    },
+    "listener_churn_10": {
+      "title": "addListener + removeListener, with 10 other listeners",
+      "ns": 1028.22
+    },
+    "listener_churn_100": {
+      "title": "addListener + removeListener, with 100 other listeners",
+      "ns": 9895.46
+    },
+    "selection_churn": {
+      "title": "select() + addListener + removeListener, 10 per event loop turn",
+      "ns": 5066.3
+    }
+  }
+}

@@ -1,0 +1,20 @@
+name: minimal_benchmark
+description: Benchmarks minimal_mvn before and after the listener tracking fixes
+publish_to: none
+
+environment:
+  sdk: ^3.7.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # tool/run.sh overrides this path, once per benchmarked version
+  minimal_mvn:
+    path: ../
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
