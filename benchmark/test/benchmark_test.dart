@@ -51,9 +51,11 @@ void _check(String id, String title, Outcome outcome) =>
 /// Lets a deferred unsubscription (if any) happen
 Future<void> _flush() => Future<void>.delayed(Duration.zero);
 
-/// Median duration of [body] in microseconds, after a warm-up run
+/// Median duration of [body] in microseconds, after warming up
 double _median(int runs, void Function() body) {
-  body();
+  for (var i = 0; i < 3; i++) {
+    body();
+  }
   final samples = <int>[];
   for (var i = 0; i < runs; i++) {
     final stopwatch = Stopwatch()..start();
@@ -64,7 +66,7 @@ double _median(int runs, void Function() body) {
   return samples[runs ~/ 2].toDouble();
 }
 
-const _runs = 9;
+const _runs = 11;
 
 void main() {
   tearDownAll(() {
@@ -306,7 +308,7 @@ void main() {
         _performance['selection_fanout_$listeners'] = {
           'title': '1 selection with $listeners listener(s), per state change',
           'ns': micros * 1000 / updates,
-          'selector_runs': selections / ((_runs + 1) * updates),
+          'selector_runs': selections / ((_runs + 3) * updates),
         };
       });
     }
@@ -316,7 +318,7 @@ void main() {
       for (var i = 0; i < 100; i++) {
         notifier.select((state) => state.value).addListener(() {});
       }
-      const updates = 2000;
+      const updates = 5000;
       final micros = _median(_runs, () {
         for (var i = 0; i < updates; i++) {
           notifier.increment();
@@ -372,7 +374,9 @@ void main() {
         return stopwatch.elapsedMicroseconds;
       }
 
-      await run();
+      for (var i = 0; i < 3; i++) {
+        await run();
+      }
       final samples = [for (var i = 0; i < _runs; i++) await run()]..sort();
       _performance['selection_churn'] = {
         'title': 'select() + addListener + removeListener, $perFrame per event loop turn',
