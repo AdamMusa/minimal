@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:minimal_mvn/minimal_mvn.dart';
 
 import 'model.dart';

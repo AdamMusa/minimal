@@ -145,15 +145,22 @@ void main() {
       once = () => notifier.removeListener(once);
       notifier.addListener(once);
       notifier.increment();
+      // a later subscription cycle, e.g. a widget coming and going
+      void l() {}
+      notifier
+        ..addListener(l)
+        ..removeListener(l);
       FlutterError.onError = onError;
       _check(
         'self_removal',
-        'A one-shot listener (removing itself when notified) autodisposes cleanly',
+        'A one-shot listener (removing itself when notified) leaves the notifier usable',
         (
           ok: errors.isEmpty && notifier.isDisposed,
           detail: errors.isEmpty
-              ? (notifier.isDisposed ? 'disposed after notifying' : 'not disposed')
-              : '${errors.length} error ("${errors.first}")',
+              ? (notifier.isDisposed
+                    ? 'no error, disposed with the next unsubscription'
+                    : 'no error, never disposed')
+              : '${errors.length} error(s) ("${errors.first}")',
         ),
       );
     });
