@@ -206,6 +206,33 @@ Benchmark _selectionChurn() => (
   },
 );
 
+Benchmark _selectionSwap() => (
+  title: 'select() in build(): a widget swapping its selection, 10 per event loop turn',
+  run: () async {
+    // a singleton notifier, listened only through the swapped selections
+    final notifier = MMManager(BNotifier.new).notifier;
+    const frames = 10000;
+    const perFrame = 10;
+    void l() {}
+    var selected = notifier.select((state) => state.value)..addListener(l);
+    return {
+      'ns': await _measure(frames * perFrame, () async {
+        for (var f = 0; f < frames; f++) {
+          for (var i = 0; i < perFrame; i++) {
+            // as ListenableBuilder.didUpdateWidget does with a new selection
+            final next = notifier.select((state) => state.value);
+            selected.removeListener(l);
+            next.addListener(l);
+            selected = next;
+          }
+          // pending microtasks, e.g. deferred unsubscriptions, run first
+          await Future<void>.microtask(() {});
+        }
+      }),
+    };
+  },
+);
+
 /// Every benchmark, by id
 final benchmarks = <String, Benchmark>{
   'direct_listeners_1': _directListeners(1),
@@ -222,4 +249,5 @@ final benchmarks = <String, Benchmark>{
   'listener_churn_10': _listenerChurn(10),
   'listener_churn_100': _listenerChurn(100),
   'selection_churn': _selectionChurn(),
+  'selection_swap': _selectionSwap(),
 };
